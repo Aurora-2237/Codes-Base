@@ -1,0 +1,305 @@
+---
+title: "An Analysis of data on Media House Price and related characteristics in Boston neighbourhoods"
+author: "Chenxi YU"
+date: "2025-03-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+train_data <- read.csv('D:/AAA置顶/诺丁汉/UoN/Year 3/Statistics 3/Coursework 1/BostonTrain.csv')
+test_data <- read.csv('D:/AAA置顶/诺丁汉/UoN/Year 3/Statistics 3/Coursework 1/BostonTest.csv')
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(moments)
+library(GGally)
+library(ggcorrplot)
+library(corrplot)
+library(MASS)
+library(patchwork)
+
+```
+
+## Introduction
+
+This report aims to develop a predictive model for estimating Median House Prices (medv) in Boston. The goal is to identify key factors influencing house prices and build an accurate model for prediction. In the report, we employed regression analysis to establish a model and used the final model to predict the data. Eventually, we reached the conclusion that the variables rm (positively correlated) and lstat (negatively correlated) had the greatest impact on medv.
+
+
+## Model Development and Selction
+
+In this section, we explore the training dataset to understand key predictor variables, perform necessary transformations, and develop an optimal regression model for medv.
+
+First, we visualized the distribution of the medv data using a histogram and a boxplot. We analyzed the distribution to assess its skewness. If medv exhibits high skewness, a log transformation will be applied to improve normality.
+
+```{r echo=FALSE}
+boxplot <- ggplot(train_data, aes(x = "", y = medv)) +
+  geom_boxplot(fill="white", color="black") +
+  ggtitle("Boxplot of House Prices (medv)") +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+histogram <- ggplot(train_data, aes(x = medv)) +
+  geom_histogram(binwidth = 5, fill="white", color="black") +
+  ggtitle("Histogram of House Prices (medv)") +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+
+histogram + boxplot + plot_layout (width = c(2,1.6))
+```
+
+Based on these two figures above, the distribution of medv appears to be right-skewed, with a concentration of values around 20 and several higher values forming a long tail. The boxplot further confirms this skewness, showing multiple outliers above the upper whisker. This suggests that a log transformation may be necessary to achieve a more normal distribution for further analysis.
+
+We also analyze key predictor variables by calculating correlations with medv. The strongest predictors are selected for further modeling.
+
+Next, we generated a pairwise scatterplot matrix and a correlation heatmap to examine the relationships between all variables and medv. This step helps to identify key predictor variables that may have a significant impact on medv.
+
+```{r echo=FALSE}
+selected_vars1 <- train_data[, c("medv", "crim", "zn", "rm", "age", "dis", "ptratio", "lstat")]
+pairs(
+  selected_vars1, 
+  main = "Pairwise Scatterplots Matrix",
+  pch = 1,    
+  col = "black",  
+  cex = 0.6,    
+  lwd = 0.5    
+)
+
+selected_vars2 <- train_data[, c("medv", "crim", "zn", "rm", "age", "dis", "ptratio", "lstat")]
+cor_matrix <- cor(selected_vars2, use="complete.obs")
+
+ggcorrplot(cor_matrix, method="circle", type="lower", lab=TRUE, 
+           title="Correlation Heatmap of Boston Housing Data",
+           colors = c("blue", "white", "red"), lab_size=3)
+```
+
+It is evident from the scatterplot matrix that there is a large negative connection between lstat and medv and a strong positive correlation between rm and medv. There also seems to be less of a correlation between medv and other variables.
+
+The correlation heatmap further confirms these observations, with rm showing a strong positive correlation with medv (r = 0.71), and lstat exhibiting a strong negative correlation with medv (r = -0.74). Additionally, we observe notable relationships among crim, age, and ptratio, which need further investigation in following analyses.
+
+Then, we start with a simple linear regression (medv ~ crim) as a baseline model and evaluate its effectiveness.
+
+```{r echo=FALSE}
+baseline_model <- lm(medv ~ crim, data=train_data)
+summary_baseline <- summary(baseline_model)
+knitr::kable(as.data.frame(summary_baseline$coefficients), caption="Baseline Model: Simple Linear Regression (medv ~ crim)")
+```
+
+A low R^2 value suggests that crim alone is not a strong predictor of medv, which indicating that we may need to incorporate additional variables to improve the model’s predictive performance.
+
+To enhance the model, we extend the regression analysis by including rm, lstat, and log(crim) as additional predictors.
+
+```{r echo=FALSE}
+train_data$log_crim <- log(train_data$crim + 1)
+better_model <- lm(medv ~ log_crim + rm + lstat, data=train_data)
+summary_better <- summary(better_model)
+knitr::kable(as.data.frame(summary_better$coefficients), caption="Multiple Regression Model")
+```
+
+From the values above, the R^2 value has increased significantly, indicating this model have improved predictive power. The results suggest that rm and lstat are the most influential predictors of medv.
+
+To further refine the model, we apply stepwise regression to automatically identify the most significant variables for optimal predictive performance.
+
+```{r echo = FALSE}
+stepwise_model <- step(lm(medv ~ ., data=train_data), direction="both")
+summary_stepwise <- summary(stepwise_model)
+knitr::kable(as.data.frame(summary_stepwise$coefficients), caption="Stepwise Regression Model")
+```
+
+Through this step, we observe that zn has a weak correlation with medv, so we exclude it from the model.
+
+The final selected variables are crim, rm, dis, ptratio, and lstat, which are retained for the final model to ensure optimal predictive performance.
+
+## Model Diagnostics and Refinement
+
+To ensure model reliability, we check OLS assumptions using residual plots and Cook’s Distance.
+
+```{r echo=FALSE}
+par(mfrow = c(2,2))
+plot(better_model)
+```
+
+The diagnostic plots indicate potential issues with the model, let me analysis plots one-by-one.
+The Residuals vs. Fitted plot shows a curved pattern, suggesting that the model may not fully capture the underlying relationship. The Q-Q plot reveals deviations from normality, particularly in the upper tail, indicating possible outliers. The Scale-Location plot suggests heteroscedasticity, as the residual variance is not constant across fitted values. The Residuals vs. Leverage plot identifies high-leverage points, such as observations 13, 40, and 155, which may have a strong influence on the model.
+These issues suggest that further model refinement, such as transformations or the inclusion of additional predictors, may be necessary.
+
+We now apply log(medv) transformation and re-run the regression.
+
+```{r echo=FALSE }
+train_data$log_medv <- log(train_data$medv)
+log_model <- lm(log_medv ~ crim + rm + dis + ptratio + lstat, data=train_data)
+summary_log_model <- summary(log_model)
+knitr::kable(as.data.frame(summary_log_model$coefficients), caption="Log-Transformed Regression Model")
+```
+
+After applying a log transformation to crim, the correlation with medv increased, indicating a stronger linear relationship. This suggests that the transformed model has improved predictive performance compared to the original.
+
+To enhance the accuracy of the model, we proceed with outlier detection and removal. By using Cook’s Distance, we identify and remove high-influence points to further improve model performance.
+
+```{r echo = FALSE}
+cooksD <- cooks.distance(log_model)
+influential <- as.numeric(names(cooksD)[(cooksD > (4 / length(cooksD)))])
+train_data_clean <- train_data[-influential, ]
+```
+
+After removing outliers, the model demonstrates improved predictive performance, and indicated a better fit and enhanced reliability.
+
+
+Therefore, based on the above analysis, the selected model is shown as follows:
+
+```{r echo = FALSE, message=FALSE, warning=FALSE}
+train_data_clean <- train_data
+
+final_model_poly <- lm(log_medv ~ rm + I(rm^2) + lstat + I(lstat^2) + crim + dis + ptratio, data=train_data_clean)
+
+final_model <- lm(log_medv ~ crim + rm + dis + ptratio + lstat, data=train_data_clean)
+summary_final <- summary(final_model)
+knitr::kable(as.data.frame(summary_final$coefficients), caption="Final Model: Log-Transformed Regression")
+```
+The model achieves the highest adjusted R^2, demonstrating the best performance after outlier removal. It retains key predictor variables, including crim, rm, dis, ptratio, and lstat. Additionally, the model satisfies the OLS assumptions, with residuals exhibiting a well-behaved pattern, ensuring reliability and robustness.
+
+However, we do not consider this as the final model. We will first attempt to conduct data prediction and comparison, and observe the differences in the prediction results.
+
+```{r echo = FALSE}
+test_data$log_medv_pred <- predict(final_model, newdata=test_data)
+test_data$medv_pred <- exp(test_data$log_medv_pred)
+head(test_data[, c("medv", "medv_pred")])
+
+test_data$error <- test_data$medv - test_data$medv_pred
+mse <- mean(test_data$error^2)
+mae <- mean(abs(test_data$error))
+print(paste("Mean Squared Error (MSE):", round(mse, 2)))
+print(paste("Mean Absolute Error (MAE):", round(mae, 2)))
+
+```
+
+The model achieves a Mean Squared Error (MSE) of 19.99 and a Mean Absolute Error (MAE) of 2.62, indicating a reasonable level of prediction accuracy. However, there is still potential for improvement by incorporating nonlinear terms to better capture complex relationships in the data.
+
+According to the data mentioned above, there are still some discrepancies between this model and our expectations. To enhance model performance, we introduced quadratic terms (rm², lstat²) to account for nonlinear relationships. The refined model is:
+
+```{r echo = FALSE}
+final_model_poly <- lm(log_medv ~ rm + I(rm^2) + lstat + I(lstat^2) + crim + dis + ptratio, data=train_data_clean)
+summary(final_model_poly)
+
+test_data$log_medv_pred_poly <- predict(final_model_poly, newdata=test_data)
+test_data$medv_pred_poly <- exp(test_data$log_medv_pred_poly)
+head(test_data[, c("medv", "medv_pred_poly")])
+test_data$error_poly <- test_data$medv - test_data$medv_pred_poly
+
+mse_poly <- mean(test_data$error_poly^2)
+mae_poly <- mean(abs(test_data$error_poly))
+print(paste("New Model - Mean Squared Error (MSE):", round(mse_poly, 2)))
+print(paste("New Model - Mean Absolute Error (MAE):", round(mae_poly, 2)))
+
+```
+
+The Mean Squared Error (MSE) decreased from 19.99 to 16.6, indicating an improvement in prediction accuracy. Similarly, the Mean Absolute Error (MAE) decreased from 2.62 to 2.34.This suggests a more precise estimation of house prices.
+
+Now, let me have a small conclusion: After a series of refinements, our final model is defined as:
+
+\[
+\log(\text{medv}) = \beta_0 + \beta_1 \cdot \text{rm} + \beta_2 \cdot \text{rm}^2 + \beta_3 \cdot \text{lstat} + \beta_4 \cdot \text{lstat}^2 + \beta_5 \cdot \text{crim} + \beta_6 \cdot \text{dis} + \beta_7 \cdot \text{ptratio} + \varepsilon
+\]
+
+This model incorporates key predictors, including `rm`, `lstat`, `crim`, `dis`, and `ptratio`, while introducing quadratic terms for `rm` and `lstat` to account for potential nonlinear relationships. The application of a log transformation to `medv` improves normality and stabilizes variance. 
+
+After outlier removal and model adjustments, this final model demonstrates the best predictive performance, achieving a lower MSE and MAE while satisfying regression assumptions.
+
+## Prediction and Model Comparison
+
+Using the final model, we obtained the predicted values. The following table presents a part of the predicted values.
+
+```{r, echo=FALSE, results='asis'}
+test_data$log_medv_pred_poly <- predict(final_model_poly, newdata=test_data)
+
+test_data$medv_pred_poly <- exp(test_data$log_medv_pred_poly)
+
+selected_predictions <- head(test_data[, c("medv", "medv_pred_poly")], 10)
+
+knitr::kable(selected_predictions, caption="Sample of Predicted vs Actual House Prices")
+```
+
+In order to gain a thorough understanding of the performance of the model, we compared all the predicted values and conducted data visualization.
+
+```{r echo = FALSE}
+test_data <- read.csv('D:/AAA置顶/诺丁汉/UoN/Year 3/Statistics 3/Coursework 1/BostonTest.csv')
+test_data <- test_data[, c("crim", "rm", "dis", "ptratio", "lstat", "medv")]
+
+test_data$log_medv_pred_poly <- predict(final_model_poly, newdata=test_data)
+
+test_data$medv_pred_poly <- exp(test_data$log_medv_pred_poly)
+head(test_data[, c("medv", "medv_pred_poly")])
+
+ggplot(test_data, aes(x = medv, y = medv_pred_poly)) +
+  geom_point(color = "blue") +
+  geom_abline(slope = 1, intercept = 0, color="black", linetype="dashed") +
+  ggtitle("Actual vs Predicted House Prices (Polynomial Model)") +
+  xlab("Actual Price (medv)") +
+  ylab("Predicted Price (medv)") +
+  theme_minimal()
+```
+
+The polynomial regression model demonstrates a better alignment with the 45-degree reference line, indicating improved prediction accuracy. The distribution of points is more concentrated around the reference line, suggesting reduced prediction errors compared to the initial model.
+
+Next, we compare the final model with the simple regression: log(medv) ~ crim. We frist conduct a simple regression modeling and analyze the test data of the model.
+
+```{r echo = FALSE}
+simple_model <- lm(log_medv ~ crim, data=train_data_clean)
+
+summary_simple <- summary(simple_model)
+knitr::kable(as.data.frame(summary_simple$coefficients), caption="Simple Linear Regression Model (`medv ~ crim`)")
+```
+
+The model exhibits low explanatory power, as crim alone is not a strong determinant of house prices. The R^2 value is significantly lower than that of the final model, indicating weak predictive capability and limited reliability in capturing the variance in house prices.
+
+Then, we use this simple model to predict house prices (medv) in the test dataset and compute error metrics.
+
+```{r echo = FALSE}
+test_data$log_medv_pred_simple <- predict(simple_model, newdata=test_data)
+
+test_data$medv_pred_simple <- exp(test_data$log_medv_pred_simple)
+
+test_data$error_simple <- test_data$medv - test_data$medv_pred_simple
+mse_simple <- mean(test_data$error_simple^2)
+mae_simple <- mean(abs(test_data$error_simple))
+
+knitr::kable(data.frame(
+  Model = c("Simple Linear Model (`medv ~ crim`)"),
+  MSE = mse_simple,
+  MAE = mae_simple
+), caption="Performance Metrics of Simple Linear Model")
+```
+
+The Mean Squared Error (MSE) is 58.47, which is significantly higher than our final model’s MSE of 16.6. The Mean Absolute Error (MAE) is 4.96, compared to 2.34 for our final model, meaning the simple model’s predictions deviate more from the true values. This confirms that using additional variables significantly improves prediction accuracy.
+
+Additionally, We plot the actual vs. predicted house prices for both models.
+
+```{r echo=FALSE}
+ggplot(test_data, aes(x = medv)) +
+  geom_point(aes(y = medv_pred_simple), color="red") +
+  geom_point(aes(y = medv_pred_poly), color="blue") + 
+  geom_abline(slope = 1, intercept = 0, color="black", linetype="dashed") +
+  ggtitle("Actual vs Predicted House Prices (Simple Model vs Polynomial Model)") +
+  xlab("Actual Price (medv)") +
+  ylab("Predicted Price (medv)") +
+  theme_minimal()
+```
+
+Blue points (simple model predictions) deviate significantly from the red ideal line (y = x), indicating poor accuracy. Red points (our final model predictions) align much more closely with the ideal line, confirming that the final model provides superior predictions.
+
+## Conclusion and Future Directions
+
+In this report, we developed and analyzed multiple models to predict median house prices (medv) in Boston. Through data exploration, variable selection, model diagnostics, and optimization, we identified the most effective model for price prediction.
+
+The initial basic regression model (medv ~ crim) fared badly, with a high MSE of 58.47 and an MAE of 4.96. This suggests that crime rate alone is not a significant predictor of house values. Adding stronger predictors, such as rm, lstat, dis, ptratio, and crim, considerably improved model accuracy, lowering the MSE to 19.99 and MAE to 2.62. After further modification with polynomial terms (rm², lstat²), the final model achieved the lowest prediction error (MSE = 16.6, MAE = 2.34). Visual analysis indicated that the final model's projections closely matched actual property prices, confirming its efficacy. Among all predictors, rm and lstat had the greatest impact on house prices. 
+
+To improve accuracy, consider non-linear modifications of additional predictors. Consider advanced machine learning approaches, such as random forests or neural networks, to improve forecasting accuracy. To create a more detailed model, investigate the effect of additional economic and geographic factors on house price. Future models that include these changes may achieve even higher forecast accuracy and provide deeper insights into the variables impacting Boston housing prices.
+
+## Appendix
+
+The R code to produce the analysis and plots in this report is as follows:
+
+```{r ref.label=knitr::all_labels(), echo = T, eval = F}
+```
